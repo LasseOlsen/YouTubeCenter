@@ -64,12 +64,12 @@
 // @priority        9001
 // ==/UserScript==
 
-(function(){
+(function () {
   "use strict";
   function inject(func) {
     try {
       var script = document.createElement("script"),
-          p = (document.body || document.head || document.documentElement);
+        p = (document.body || document.head || document.documentElement);
       if (!p) {
         return;
       }
@@ -83,36 +83,39 @@
     } catch (e) {}
   }
   function injected_saveSettings(id, key, data) {
-    var runtimeOrExtension = chrome.runtime && chrome.runtime.sendMessage ? "runtime" : "extension";
-    chrome[runtimeOrExtension].sendMessage(JSON.stringify({ "method": "setLocalStorage", "key": key, "data": data }), function(response) {
-      if (typeof response === "string") response = JSON.parse(response);
+    function injectCallback(response) {
+      if (typeof response === "string") {
+        response = JSON.parse(response);
+      }
       inject("window.ytcenter.storage.onsaved(" + id + ")");
-    });
+    }
+    var runtimeOrExtension = chrome.runtime && chrome.runtime.sendMessage ? "runtime" : "extension";
+    chrome[runtimeOrExtension].sendMessage(JSON.stringify({ "method": "setLocalStorage", "key": key, "data": data }), injectCallback);
   }
   function injected_loadSettings(id, key) {
-    var runtimeOrExtension = chrome.runtime && chrome.runtime.sendMessage ? "runtime" : "extension";
-    chrome[runtimeOrExtension].sendMessage(JSON.stringify({ "method": "getLocalStorage", "key": key }), function(response) {
-      if (typeof response === "string") response = JSON.parse(response);
+    function injectCallback(response) {
+      if (typeof response === "string") {
+        response = JSON.parse(response);
+      }
       inject("window.ytcenter.storage.onloaded(" + id + ", " + (response ? (response.data ? (typeof response.data === "string" ? response.data : JSON.stringify(response.data)) : "{}") : {}) + ")");
-    });
+    }
+    var runtimeOrExtension = chrome.runtime && chrome.runtime.sendMessage ? "runtime" : "extension";
+    chrome[runtimeOrExtension].sendMessage(JSON.stringify({ "method": "getLocalStorage", "key": key }), injectCallback);
   }
   function injected_xhr(id, details) {
-    var xmlhttp, prop;
-    if (typeof GM_xmlhttpRequest !== "undefined") {
+    var xmlhttp, prop, succ = true;
+    if (GM_xmlhttpRequest !== undefined) {
       GM_xmlhttpRequest(details);
-      return true;
     } else {
-      if (typeof XMLHttpRequest !== "undefined") {
+      if (XMLHttpRequest !== undefined) {
         xmlhttp = new XMLHttpRequest();
-      } else if (typeof opera !== "undefined" && typeof opera.XMLHttpRequest !== "undefined") {
+      } else if (opera !== undefined && opera.XMLHttpRequest !== undefined) {
         xmlhttp = new opera.XMLHttpRequest();
-      } else if (typeof uw !== "undefined" && typeof uw.XMLHttpRequest !== "undefined") {
-        xmlhttp = new uw.XMLHttpRequest();
       } else {
         inject("window.ytcenter.xhr.onerror(" + id + ", {})");
-        return false;
+        succ = false;
       }
-      xmlhttp.onreadystatechange = function(){
+      xmlhttp.onreadystatechange = function () {
         var responseState = {
           responseXML: '',
           responseText: (xmlhttp.readyState === 4 ? xmlhttp.responseText : ''),
@@ -134,9 +137,9 @@
       };
       try {
         xmlhttp.open(details.method, details.url);
-      } catch(e) {
+      } catch (e) {
         inject("window.ytcenter.xhr.onerror(" + id + ", {responseXML:'',responseText:'',readyState:4,responseHeaders:'',status:403,statusText:'Forbidden'})");
-        return false;
+        succ = false;
       }
       if (details.headers) {
         for (prop in details.headers) {
@@ -145,13 +148,12 @@
           }
         }
       }
-      xmlhttp.send((typeof details.data !== "undefined" ? details.data : null));
-      return true;
+      xmlhttp.send((details.data !== undefined ? details.data : null));
     }
+    return succ;
   }
-  
-  var main_function = function(injected, identifier, devbuild, devnumber){
-    "use strict";
+
+  function main_function(injected, identifier, devbuild, devnumber) {
     //console.log("Script was " + (injected ? "injected" : " not injected") + ".");
     /** Injected
      * True, if it's injected into the page to compensate for the missing unsafeWindow variable.
@@ -165,74 +167,80 @@
      **/
     /* UTILS */
     function $SaveData(key, value) {
+      var succ = false;
       if (identifier === 2) {
         window.external.mxGetRuntime().storage.setConfig(key, value);
-        return window.external.mxGetRuntime().storage.getConfig(key) === value;
+        succ = window.external.mxGetRuntime().storage.getConfig(key) === value;
       } else {
         if (ytcenter.storageType === 3) {
           GM_setValue(key, value);
-          return GM_getValue(key) === value;
+          succ = GM_getValue(key) === value;
         } else if (ytcenter.storageType === 2) {
           localStorage[key] = value;
-          return localStorage[key] === value; // validation
+          succ = localStorage[key] === value; // validation
         } else if (ytcenter.storageType === 1) {
           uw.localStorage[key] = value;
-          return uw.localStorage[key] === value; // validation
+          succ = uw.localStorage[key] === value; // validation
         } else if (ytcenter.storageType === 0) {
-          ytcenter.utils.setCookie(key, value, null, "/", 1000*24*60*60*1000);
-          return ytcenter.utils.getCookie(name) === value; // validation
+          ytcenter.utils.setCookie(key, value, null, "/", 1000 * 24 * 60 * 60 * 1000);
+          succ = ytcenter.utils.getCookie(name) === value; // validation
         } else {
           con.error("[Storage] Unknown Storage Type!");
-          return false;
+          succ = false;
         }
       }
+      return succ;
     }
 
     function $LoadData(key, def) {
+      var val = null,
+        d;
       if (identifier === 2) {
-        return window.external.mxGetRuntime().storage.getConfig(key);
+        val = window.external.mxGetRuntime().storage.getConfig(key);
       } else {
         if (ytcenter.storageType === 3) {
-          var d = GM_getValue(key, null);
-          if (d !== null) return d;
+          d = GM_getValue(key, null);
+          if (d !== null) {
+            val = d;
+          }
         } else if (ytcenter.storageType === 2) {
-          if (localStorage[key]) return localStorage[key];
+          if (localStorage[key]) {
+            val = localStorage[key];
+          }
         } else if (ytcenter.storageType === 1) {
-          if (uw.localStorage[key]) return uw.localStorage[key];
+          if (uw.localStorage[key]) {
+            val = uw.localStorage[key];
+          }
         } else if (ytcenter.storageType === 0) {
-          var d = ytcenter.utils.getCookie(name);
-          if (d) return d;
+          d = ytcenter.utils.getCookie(name);
+          if (d) {
+            val = d;
+          }
         } else {
           con.error("[Storage] Unknown Storage Type!");
         }
-        return def;
+        val = def;
       }
+      return val;
     }
     function $UpdateChecker() {
-      if (!ytcenter.settings.enableUpdateChecker) return;
-      var curr = (new Date().getTime()),
-          c = curr - 1000*60*60*parseInt(ytcenter.settings.updateCheckerInterval);
-      con.log("Checking for updates in " + ((ytcenter.settings.updateCheckerLastUpdate - c)/1000/60/60) + " hours...");
-      if (c >= ytcenter.settings.updateCheckerLastUpdate) {
-        con.log("Checking for updates now...");
-        ytcenter.settings.updateCheckerLastUpdate = curr;
-        ytcenter.saveSettings();
-        ytcenter.checkForUpdates();
+      if (ytcenter.settings.enableUpdateChecker) {
+        var curr = (new Date().getTime()),
+          c = curr - 1000 * 60 * 60 * parseInt(ytcenter.settings.updateCheckerInterval, 10);
+        con.log("Checking for updates in " + ((ytcenter.settings.updateCheckerLastUpdate - c) / 1000 / 60 / 60) + " hours...");
+        if (c >= ytcenter.settings.updateCheckerLastUpdate) {
+          con.log("Checking for updates now...");
+          ytcenter.settings.updateCheckerLastUpdate = curr;
+          ytcenter.saveSettings();
+          ytcenter.checkForUpdates();
+        }
       }
-    }
-    
-    function $HasAttribute(elm, attr) {
-      var i;
-      for (i = 0; i < elm.attributes.length; i++) {
-        if (elm.attributes[i].name == attr) return true;
-      }
-      return false;
     }
     
     function $GetOffset(elm) {
       var x = 0,
           y = 0;
-      while (elm != null) {
+      while (elm !== null) {
         y += elm.offsetTop;
         x += elm.offsetLeft;
         elm = elm.offsetParent;
@@ -241,7 +249,39 @@
     }
     
     function $CreateAspectButton() {
-      var btn = document.createElement("button");
+      function itemEventListener(e) {
+        var i;
+        playerAspectTMP = "default";
+        if (ytcenter.settings.aspectSave) {
+          ytcenter.settings.aspectValue = "default";
+        }
+        for (i = 0; i < this.parentNode.parentNode.children.length; i++) {
+          if (this.parentNode.parentNode.children[i].children[0] && this.parentNode.parentNode.children[i].children[0].tagName === "SPAN") {
+            this.parentNode.parentNode.children[i].children[0].setAttribute("style", "");
+          }
+        }
+        this.setAttribute("style", "background:#555!important;color:#FFF!important;");
+        ytcenter.saveSettings();
+        ytcenter.player.aspect("default");
+      }
+      var btn = document.createElement("button"),
+        btnContent = document.createElement("span"),
+        arrow = document.createElement("img"),
+        menu = document.createElement("ul"),
+        item = document.createElement("span"),
+        groups = {
+          'crop': 'BUTTON_ASPECT_CROP',
+          'stretch': 'BUTTON_ASPECT_STRETCH'
+        },
+        groupChoices = {
+          '4:3': 'BUTTON_ASPECT_4:3',
+          '16:9': 'BUTTON_ASPECT_16:9'
+        },
+        playerAspectTMP = ytcenter.settings.aspectValue,
+        li = document.createElement("li"),
+        group = null,
+        child = null,
+        val = null;
       btn.className = "yt-uix-button yt-uix-tooltip" + (ytcenter.settings.aspectEnable ? "" : " hid") + (!ytcenter.watch7 ? " yt-uix-button-default" : " yt-uix-button-text");
       btn.setAttribute("title", ytcenter.language.getLocale("BUTTON_ASPECT_TOOLTIP"));
       btn.setAttribute("type", "button");
@@ -255,38 +295,21 @@
         }
       });
       
-      var btnContent = document.createElement("span");
       btnContent.className = "yt-uix-button-content";
       btnContent.textContent = ytcenter.language.getLocale("BUTTON_ASPECT_TEXT");
       ytcenter.language.addLocaleElement(btnContent, "BUTTON_ASPECT_TEXT", "@textContent");
       
       btn.appendChild(btnContent);
       
-      var arrow = document.createElement("img");
       arrow.className = "yt-uix-button-arrow";
       arrow.src = "//s.ytimg.com/yt/img/pixel-vfl3z5WfW.gif";
       arrow.setAttribute("alt", "");
       
       btn.appendChild(arrow);
       
-      var groups = {
-        'crop': 'BUTTON_ASPECT_CROP',
-        'stretch': 'BUTTON_ASPECT_STRETCH'
-      };
-      
-      var groupChoices = {
-        '4:3': 'BUTTON_ASPECT_4:3',
-        '16:9': 'BUTTON_ASPECT_16:9'
-      };
-      
-      var menu = document.createElement("ul");
       menu.className = "yt-uix-button-menu yt-uix-button-menu-default yt-uix-button-menu-external hid";
       menu.setAttribute("role", "menu");
       menu.setAttribute("aria-haspopup", "true");
-      var playerAspectTMP = ytcenter.settings['aspectValue'];
-      var item;
-      
-      item = document.createElement("span");
       if (ytcenter.settings.aspectValue === "none") {
         item.setAttribute("style", "background:#555!important;color:#FFF!important;");
       }
@@ -294,21 +317,7 @@
       item.setAttribute("onclick", ";return false;");
       item.textContent = ytcenter.language.getLocale("BUTTON_ASPECT_NONE");
       ytcenter.language.addLocaleElement(item, "BUTTON_ASPECT_NONE", "@textContent");
-      item.addEventListener("click", function(){
-        playerAspectTMP = "none";
-        if (ytcenter.settings.aspectSave) {
-          ytcenter.settings['aspectValue'] = "none";
-        }
-        for (var i = 0; i < this.parentNode.parentNode.children.length; i++) {
-          if (this.parentNode.parentNode.children[i].children[0] && this.parentNode.parentNode.children[i].children[0].tagName === "SPAN") {
-            this.parentNode.parentNode.children[i].children[0].setAttribute("style", "");
-          }
-        }
-        this.setAttribute("style", "background:#555!important;color:#FFF!important;");
-        ytcenter.saveSettings();
-        ytcenter.player.aspect("none");
-      }, false);
-      var li = document.createElement("li");
+      item.addEventListener("click", itemEventListener, false);
       li.setAttribute("role", "menuitem");
       li.appendChild(item);
       
@@ -322,20 +331,7 @@
       item.setAttribute("onclick", ";return false;");
       item.textContent = ytcenter.language.getLocale("BUTTON_ASPECT_DEFAULT");
       
-      item.addEventListener("click", function(){
-        playerAspectTMP = "default";
-        if (ytcenter.settings.aspectSave) {
-          ytcenter.settings['aspectValue'] = "default";
-        }
-        for (var i = 0; i < this.parentNode.parentNode.children.length; i++) {
-          if (this.parentNode.parentNode.children[i].children[0] && this.parentNode.parentNode.children[i].children[0].tagName === "SPAN") {
-            this.parentNode.parentNode.children[i].children[0].setAttribute("style", "");
-          }
-        }
-        this.setAttribute("style", "background:#555!important;color:#FFF!important;");
-        ytcenter.saveSettings();
-        ytcenter.player.aspect("default");
-      }, false);
+      item.addEventListener("click", itemEventListener, false);
       ytcenter.language.addLocaleElement(item, "BUTTON_ASPECT_DEFAULT", "@textContent");
       li = document.createElement("li");
       li.setAttribute("role", "menuitem");
@@ -343,7 +339,7 @@
       
       menu.appendChild(li);
       
-      for (var group in groups) {
+      for (group in groups) {
         if (groups.hasOwnProperty(group)) {
           item = document.createElement("li");
           item.style.fontWeight = "bold";
@@ -351,10 +347,10 @@
           item.textContent = ytcenter.language.getLocale(groups[group]);
           ytcenter.language.addLocaleElement(item, groups[group], "@textContent");
           menu.appendChild(item);
-          for (var child in groupChoices) {
+          for (child in groupChoices) {
             if (groupChoices.hasOwnProperty(child)) {
               if (child === "4:3" && group === "crop") continue;
-              var val = "yt:" + group + "=" + child;
+              val = "yt:" + group + "=" + child;
               item = document.createElement("span");
               if (val === ytcenter.settings.aspectValue) {
                 item.setAttribute("style", "background:#555!important;color:#FFF!important;");
@@ -3129,15 +3125,17 @@
       }
     };
     ytcenter.unload = (function(){
-      var unloads = [];
-      
-      window.addEventListener("unload", function(){
+      function unloadListener() {
         var i;
         for (i = 0; i < unloads.length; i++) {
           if (typeof unloads[i] === "function") unloads[i]();
           else con.error("[Unload] Couldn't unload!", unloads[i]);
         }
-      }, false);
+      }
+      var unloads = [];
+      
+      window.addEventListener("unload", unloadListener, false);
+      
       return function(unload){
         unloads.push(unload);
       };
@@ -5659,6 +5657,23 @@
         item.content.appendChild(wrapper);
       }
       function updateWatchedClass(item) {
+        function toggleWatchedState() {
+          if (ytcenter.videoHistory.isVideoWatched(item.id)) {
+            ytcenter.videoHistory.removeVideo(item.id);
+            s.textContent = ytcenter.language.getLocale("VIDEOWATCHED_ADD");
+          } else {
+            ytcenter.videoHistory.addVideo(item.id);
+            s.textContent = ytcenter.language.getLocale("VIDEOWATCHED_REMOVE");
+          }
+          updateWatchedMessage(item);
+        }
+        function updateLocale() {
+          if (ytcenter.videoHistory.isVideoWatched(item.id)) {
+            s.textContent = ytcenter.language.getLocale("VIDEOWATCHED_REMOVE");
+          } else {
+            s.textContent = ytcenter.language.getLocale("VIDEOWATCHED_ADD");
+          }
+        }
         var watched = ytcenter.utils.hasClass(item.content, "watched"),
             am, li, s;
         if (item.itemWrapper && watched) {
@@ -5680,26 +5695,11 @@
             } else {
               s.textContent = ytcenter.language.getLocale("VIDEOWATCHED_ADD");
             }
-            ytcenter.utils.addEventListener(li, "click", function(){
-              if (ytcenter.videoHistory.isVideoWatched(item.id)) {
-                ytcenter.videoHistory.removeVideo(item.id);
-                s.textContent = ytcenter.language.getLocale("VIDEOWATCHED_ADD");
-              } else {
-                ytcenter.videoHistory.addVideo(item.id);
-                s.textContent = ytcenter.language.getLocale("VIDEOWATCHED_REMOVE");
-              }
-              updateWatchedMessage(item);
-            }, false);
+            ytcenter.utils.addEventListener(li, "click", toggleWatchedState, false);
             
             li.appendChild(s);
             am.insertBefore(li, am.children[0]);
-            ytcenter.events.addEvent("language-refresh", function(){
-              if (ytcenter.videoHistory.isVideoWatched(item.id)) {
-                s.textContent = ytcenter.language.getLocale("VIDEOWATCHED_REMOVE");
-              } else {
-                s.textContent = ytcenter.language.getLocale("VIDEOWATCHED_ADD");
-              }
-            });
+            ytcenter.events.addEvent("language-refresh", updateLocale);
           }
         }
       }

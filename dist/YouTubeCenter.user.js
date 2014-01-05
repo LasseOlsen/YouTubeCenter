@@ -69,7 +69,8 @@
   function inject(func) {
     try {
       var script = document.createElement("script"),
-          p = (document.body || document.head || document.documentElement);
+      p = (document.body || document.head || document.documentElement);
+      
       if (!p) {
         return;
       }
